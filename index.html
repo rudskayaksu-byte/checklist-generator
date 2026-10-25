@@ -76,6 +76,7 @@
             display: flex;
             justify-content: center;
             gap: 15px;
+            align-items: center;
         }
 
         button {
@@ -93,14 +94,22 @@
         .btn-clear { background-color: #e74c3c; color: white; }
         .btn-clear:hover { background-color: #c0392b; }
 
-        #copy-status {
-            text-align: center;
-            color: #2ecc71;
-            font-weight: bold;
-            margin-top: 10px;
-            height: 20px;
+        /* --- АНИМАЦИЯ КОТА --- */
+        #copy-image {
+            width: 60px;
+            height: 60px;
             opacity: 0;
-            transition: opacity 0.3s;
+            /* Начальное состояние: невидимый и уменьшенный */
+            transform: scale(0.5);
+            /* Плавность для прозрачности и масштаба */
+            transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            object-fit: contain;
+        }
+
+        /* Класс, который делает кота видимым и большим */
+        #copy-image.show {
+            opacity: 1;
+            transform: scale(1); /* Увеличиваем до нормального размера */
         }
     </style>
 </head>
@@ -123,67 +132,49 @@
 
         <div class="buttons">
             <button class="btn-copy" id="btn-copy">Копировать результат</button>
+
+            <!-- Кот -->
+            <img id="copy-image" src="cat.png" alt="Скопировано!">
+
             <button class="btn-clear" id="btn-clear">Очистить всё</button>
         </div>
-
-        <div id="copy-status"></div>
     </div>
 
     <script>
-        // --- ЛОГИКА (JavaScript) ---
-
         const inputText = document.getElementById('input-text');
         const outputText = document.getElementById('output-text');
         const btnCopy = document.getElementById('btn-copy');
         const btnClear = document.getElementById('btn-clear');
-        const copyStatus = document.getElementById('copy-status');
+        const copyImage = document.getElementById('copy-image');
 
-        // Функция для преобразования текста
+        function cleanLine(line) {
+            line = line.replace(/\u00A0/g, ' ').trim();
+            line = line.replace(/^[\s\-*•–—]+|^\[[\sxX✓vV]?\]\s*/g, '');
+            line = line.replace(/^\d+[\.\)\-]\s*/, '');
+            return line.trim();
+        }
+
         function formatForBitrix() {
-            let text = inputText.value;
-
-            // 1. Убираем пустые строки в начале и конце всего текста
-            text = text.trim();
+            let text = inputText.value.trim();
             if (!text) {
                 outputText.value = '';
                 return;
             }
 
-            // 2. Разбиваем текст на строки и убираем пустые строки (фильтруем)
             let lines = text.split('\n')
-                .map(line => line.trim())
+                .map(line => cleanLine(line))
                 .filter(line => line !== '');
 
-            // 3. Умная разбивка, если текст написан в одну строку (или слипся)
-            // Проверяем каждую строку: если она длинная и содержит много заглавных букв,
-            // пытаемся разбить её на части перед заглавными буквами.
             let expandedLines = [];
-
             for (let line of lines) {
-                // Регулярное выражение ищет заглавные буквы (кириллица и латиница)
-                // (?<=.) - значит, что перед заглавной буквой должен быть хоть какой-то символ
-                // \s+ - пробел перед заглавной буквой (чтобы не резать слова вроде "МВидео")
-                // Но мы сделаем проще и безопаснее: ищем пробел + Заглавная буква.
-                // Исключение: если перед нами аббревиатура (2+ заглавные подряд), не режем.
-
-                // Разбиваем по пробелу, за которым идет заглавная буква
-                // (?!^) - не в начале строки
-                // \s(?=[А-ЯA-Z]) - пробел, после которого заглавная
                 let parts = line.split(/(?<=\S)\s+(?=[А-ЯЁA-Z])/);
-
-                // Если частей получилось больше одной, добавляем их все.
-                // Но нам нужно защитить аббревиатуры.
                 let goodParts = [];
                 let currentPart = "";
 
                 for (let part of parts) {
-                    // Если часть начинается с 2+ заглавных букв подряд (например, "ООО Ромашка"),
-                    // она может быть началом нормального предложения, а не просто новым пунктом.
-                    // Проверяем, не является ли это продолжением предыдущего.
                     if (currentPart === "") {
                         currentPart = part;
                     } else {
-                        // Если мы видим, что это просто короткое слово капсом (до 4 букв), приклеиваем обратно
                         const firstWord = part.split(' ')[0];
                         if (firstWord.length <= 3 && firstWord === firstWord.toUpperCase() && /^[А-ЯЁA-Z]+$/.test(firstWord)) {
                             currentPart += " " + part;
@@ -195,7 +186,6 @@
                 }
                 if (currentPart) goodParts.push(currentPart);
 
-                // Если разбивка дала результат, используем его, иначе оставляем как было
                 if (goodParts.length > 1) {
                     expandedLines.push(...goodParts);
                 } else {
@@ -204,34 +194,26 @@
             }
 
             let resultLines = [];
-            let hasChecklist = false;
+            let currentBlockHasHeader = false;
 
-            // 4. Формируем итоговый текст
             for (let i = 0; i < expandedLines.length; i++) {
                 const line = expandedLines[i];
                 const lowerLine = line.toLowerCase();
-
-                // Проверка на заголовок (Чек-лист...)
                 const isHeader = /^(чек-лист|чек лист|чеклист)/i.test(lowerLine);
 
                 if (isHeader) {
-                    hasChecklist = true;
-                    // Если перед этим были пункты, добавляем пустую строку для разделения чек-листов
-                    if (resultLines.length > 0) {
-                        resultLines.push('');
-                    }
+                    if (resultLines.length > 0) resultLines.push('');
                     resultLines.push(`[**]${line}`);
+                    currentBlockHasHeader = true;
                 } else {
-                    // Если это первый текст и заголовка нет — создаем дефолтный
-                    if (!hasChecklist && resultLines.length === 0) {
-                         resultLines.push('[**]Чек-лист');
-                         hasChecklist = true;
+                    if (!currentBlockHasHeader) {
+                        resultLines.push('[**]Чек-лист');
+                        currentBlockHasHeader = true;
                     }
                     resultLines.push(`[*]${line}`);
                 }
             }
 
-            // 5. Убираем возможные лишние пустые строки в конце и склеиваем
             while (resultLines.length > 0 && resultLines[resultLines.length - 1] === '') {
                 resultLines.pop();
             }
@@ -243,10 +225,15 @@
 
         btnCopy.addEventListener('click', () => {
             if (!outputText.value) return;
+
             navigator.clipboard.writeText(outputText.value).then(() => {
-                copyStatus.textContent = '✅ Скопировано в буфер обмена!';
-                copyStatus.style.opacity = '1';
-                setTimeout(() => { copyStatus.style.opacity = '0'; }, 2000);
+                // Добавляем класс, который запускает анимацию появления и увеличения
+                copyImage.classList.add('show');
+
+                // Через 2 секунды убираем класс, и кот плавно исчезает
+                setTimeout(() => {
+                    copyImage.classList.remove('show');
+                }, 2000);
             }).catch(err => {
                 alert('Ошибка при копировании: ' + err);
             });
